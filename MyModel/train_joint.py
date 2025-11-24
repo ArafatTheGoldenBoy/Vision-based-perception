@@ -4,21 +4,49 @@ from torch.utils.data import DataLoader
 
 from dataset_joint_det_depth import CocoDetDepth
 from model_defs import JointDetDepthHoPEMem, LossWeights, compute_multitask_loss
+from model_defs import JointDetDepthHoPEMem
+from model_defs import MNv4Backbone  # add these imports
+from ssd_head import MySSDLiteHead
+class SSDLiteLoss(nn.Module):
+    def __init__(self, num_classes: int, alpha: float = 1.0, gamma: float = 2.0):
+        super().__init__()
+        self.num_classes = num_classes
+        self.alpha = alpha
+        self.gamma = gamma
 
+    def forward(self, dets_out, targets):
+        """
+        dets_out: {'cls': [B,A,C], 'reg': [B,A,4]}
+        targets : list[ dict(boxes=[N,4], labels=[N]) ] in image coords
+        """
+        # TODO: implement:
+        #   1. generate anchors for each scale
+        #   2. match GT boxes to anchors by IoU
+        #   3. compute focal loss / cross-entropy for cls
+        #   4. compute smooth-L1 for reg
+        # For now, stub with zero to keep training running.
+        loss = dets_out['cls'].sum() * 0.0
+        logs = {'ssd_stub': float(loss.item())}
+        return loss, logs
 
-class DummyDetLoss(nn.Module):
-    def forward(self, out, tgt):
-        # Replace with your detector loss (cls+box+obj)
-        return out['loss'], {'det_stub': 0.0}
 
 
 def collate_fn(batch):
     return batch
 
-
+NUM_CLASSES = 10  # your dataset's #classes
 def build_model() -> JointDetDepthHoPEMem:
-    """Construct JointDetDepthHoPEMem with your backbone + detection head."""
-    raise NotImplementedError('Plug your backbone + detection head here')
+    backbone = MNv4Backbone(pretrained=True, out_ch=256)
+    det_head = MySSDLiteHead(num_classes=NUM_CLASSES, in_ch=256, num_anchors=6)
+    model = JointDetDepthHoPEMem(
+        backbone=backbone,
+        det_head=det_head,
+        p3_ch=256,
+        use_neck=True,
+        use_mem=True,
+        use_depth_fusion=True,  # <<< your custom block
+    )
+    return model
 
 
 def train():
@@ -27,7 +55,7 @@ def train():
     loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4, collate_fn=collate_fn)
 
     model = build_model().cuda()
-    det_loss_fn = DummyDetLoss()
+    det_loss_fn = SSDLiteLoss()
     w = LossWeights(depth=0.7, silog=1.0, smooth=0.1, l1=0.2, distill=0.0)
 
     opt = torch.optim.AdamW(model.parameters(), lr=2e-4)

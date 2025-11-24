@@ -350,6 +350,33 @@ def compute_multitask_loss(dets_out: Dict, dets_targets: Dict,
     }
     return L, logs
 
+"""
+    Your custom block:
+      uses the inverse depth map to re-weight P3 features before detection.
+
+    You can refer to this in your docs/paper as:
+      'Depth-Aware Fusion (DAF)'.
+"""
+class DepthAwareFusion(nn.Module):
+    
+    def __init__(self, c: int = 256, hidden: int = 32):
+        super().__init__()
+        # We take a 1xHxW inverse-depth map (downsampled to P3 size)
+        self.mlp = nn.Sequential(
+            nn.Conv2d(1, hidden, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(hidden, c, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, p3: torch.Tensor, invd_low: torch.Tensor) -> torch.Tensor:
+        """
+        p3      : [B, C, H, W]   features from neck+memory
+        invd_low: [B, 1, H, W]   inverse depth at same resolution
+        """
+        gate = self.mlp(invd_low)          # [B, C, H, W] in (0,1)
+        return p3 * (1.0 + gate)           # residual scaling
+
 # ========================= CARLA runtime sketch ========================= #
 
 """
